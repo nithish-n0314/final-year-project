@@ -16,8 +16,7 @@ from .serializers import (
     ExpenseSerializer,
     ChatMessageSerializer
 )
-from .ai_langchain import FinanceAI
-from .ai_pdf import PDFExpenseExtractor
+# Lazy import heavy AI modules inside endpoints to avoid blocking server startup
 from .reports import ReportGenerator
 
 # Authentication Views
@@ -55,7 +54,7 @@ def login(request):
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
             }
-        }, status=status.HTTP_200_OK)
+        })
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -112,8 +111,19 @@ def expenses(request):
         if serializer.is_valid():
             # Use AI to categorize if category not provided
             if not serializer.validated_data.get('category'):
-                ai = FinanceAI()
-                category = ai.categorize_expense(serializer.validated_data['description'])
+                try:
+                    from .ai_langchain import FinanceAI
+                    ai = FinanceAI()
+                    category = ai.categorize_expense(serializer.validated_data['description'])
+                except Exception:
+                    # Fallback simple categorization if ML libs not available
+                    description_lower = serializer.validated_data['description'].lower()
+                    if any(word in description_lower for word in ['restaurant', 'food', 'meal', 'lunch', 'dinner', 'breakfast']):
+                        category = 'food'
+                    elif any(word in description_lower for word in ['uber', 'taxi', 'gas', 'fuel', 'transport']):
+                        category = 'transportation'
+                    else:
+                        category = 'other'
                 serializer.validated_data['category'] = category
             
             expense = serializer.save()
@@ -135,9 +145,12 @@ def upload_pdf_expenses(request):
         if not pdf_file.name.lower().endswith('.pdf'):
             return Response({'error': 'File must be a PDF'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Extract expenses from PDF
-        extractor = PDFExpenseExtractor()
-        expenses_data = extractor.process_pdf_expenses(pdf_file)
+        try:
+            from .ai_pdf import PDFExpenseExtractor
+            extractor = PDFExpenseExtractor()
+            expenses_data = extractor.process_pdf_expenses(pdf_file)
+        except Exception as e:
+            return Response({'error': f'PDF processing unavailable: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         if not expenses_data:
             return Response({'error': 'No expenses found in PDF'}, status=status.HTTP_400_BAD_REQUEST)
@@ -173,10 +186,15 @@ def dashboard(request):
         report_generator = ReportGenerator()
         insights = report_generator.get_dashboard_insights(request.user)
         
-        # Generate AI suggestions
-        ai = FinanceAI()
-        savings_suggestions = ai.generate_savings_suggestions(request.user)
-        investment_ideas = ai.generate_investment_ideas(request.user)
+        # Generate AI suggestions (lazy import)
+        try:
+            from .ai_langchain import FinanceAI
+            ai = FinanceAI()
+            savings_suggestions = ai.generate_savings_suggestions(request.user)
+            investment_ideas = ai.generate_investment_ideas(request.user)
+        except Exception:
+            savings_suggestions = []
+            investment_ideas = []
         
         return Response({
             'user': UserSerializer(request.user).data,
@@ -198,9 +216,13 @@ def chat(request):
         if not message:
             return Response({'error': 'Message is required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Generate AI response
-        ai = FinanceAI()
-        response = ai.chat_response(request.user, message)
+        # Generate AI response (lazy import)
+        try:
+            from .ai_langchain import FinanceAI
+            ai = FinanceAI()
+            response = ai.chat_response(request.user, message)
+        except Exception:
+            response = "AI service unavailable. Please try later."
         
         # Save chat message
         chat_message = ChatMessage.objects.create(

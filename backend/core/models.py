@@ -8,9 +8,11 @@ class User(AbstractUser):
         ('student', 'Student'),
         ('freelancer', 'Freelancer'),
         ('teacher', 'Teacher'),
-        ('professional', 'Professional'),
+        ('professional', 'IT Professional'),
     ]
     
+    # Override username to remove unique constraint
+    username = models.CharField(max_length=150, blank=True)
     email = models.EmailField(unique=True)  # Make email required and unique
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     monthly_income = models.DecimalField(

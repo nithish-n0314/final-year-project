@@ -14,6 +14,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A user with this email already exists.")
         return value
     
+    def validate_username(self, value):
+        # Allow duplicate usernames - only check email for uniqueness
+        return value
+    
     def create(self, validated_data):
         password = validated_data.pop('password')
         user = User.objects.create_user(**validated_data)
